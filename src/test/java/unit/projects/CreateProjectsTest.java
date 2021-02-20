@@ -1,73 +1,94 @@
 package unit.projects;
 
-import com.sfl.flybet.casestudy.domain.*;
-import com.sfl.flybet.casestudy.domain.exceptions.EndDateProjectException;
-import com.sfl.flybet.casestudy.infrastructure.adapters.InMemoryCustomerAccountRepository;
-import com.sfl.flybet.casestudy.infrastructure.adapters.InMemoryCustomerRepository;
-import com.sfl.flybet.casestudy.infrastructure.adapters.InMemoryProjectRepository;
-import com.sfl.flybet.casestudy.domain.exceptions.ProjectAlreadyExistsException;
-import com.sfl.flybet.casestudy.domain.exceptions.SoldeInsuffisantException;
-import com.sfl.flybet.casestudy.domain.ports.project.ProjectCustomerPort;
-import com.sfl.flybet.casestudy.infrastructure.ports.CustomerAccountRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.CustomerRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.ProjectRepository;
-import com.sfl.flybet.casestudy.domain.adapters.ProjectCustomer;
+
+import com.sfl.flybet.casestudy.domain.gateways.InMemoryAuthenticationCustomerGateway;
+import com.sfl.flybet.domain.authentication.AuthenticationCustomerGateway;
+import com.sfl.flybet.domain.authentication.exceptions.AuthorizationException;
+import com.sfl.flybet.domain.common.model.Amount;
+import com.sfl.flybet.domain.common.model.Devise;
+import com.sfl.flybet.domain.customer.model.Customer;
+import com.sfl.flybet.domain.customer.ports.outgoing.CustomerDatabase;
+import com.sfl.flybet.domain.customeraccount.model.CustomerAccount;
+import com.sfl.flybet.domain.customeraccount.ports.outgoing.CustomerAccountDatabase;
+import com.sfl.flybet.domain.project.ProjectFacade;
+import com.sfl.flybet.domain.project.exceptions.EndDateProjectException;
+import com.sfl.flybet.domain.project.exceptions.ProjectAlreadyExistsException;
+import com.sfl.flybet.domain.project.exceptions.ProjectNotFoundException;
+import com.sfl.flybet.domain.project.exceptions.SoldeInsuffisantException;
+import com.sfl.flybet.domain.project.model.CreateProjectCommand;
+import com.sfl.flybet.domain.project.model.ProjectIdentifier;
+import com.sfl.flybet.domain.project.ports.outgoing.ProjectDatabase;
+import com.sfl.flybet.domain.subscription.ports.outgoing.SubscriptionDatabase;
 import de.bechte.junit.runners.context.HierarchicalContextRunner;
-import org.hamcrest.Matchers;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import unit.customer.adapter.InMemoryCustomerAccountDatabaseAdapter;
+import unit.customer.adapter.InMemoryCustomerDatabaseAdapter;
+import unit.customer.adapter.InMemorySubscriptionDatabaseAdapter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @RunWith(HierarchicalContextRunner.class)
 public class CreateProjectsTest {
-    public static final String GESTION_BANKROL_PROJECT_ID = "A1A1";
-    private final ProjectRepository massiProjectRepositories = new InMemoryProjectRepository();
-    private final CustomerRepository customerRepository = new InMemoryCustomerRepository();
-    private final CustomerAccountRepository customerAccountRepository = new InMemoryCustomerAccountRepository();
-    private Customer tipsterMassi = new Customer("ABC", "Massi");
-    private Customer admin = new Customer("ADM", "Admin");
-    private ProjectCustomerPort projectCustomerPort = new ProjectCustomer(massiProjectRepositories, customerAccountRepository);
-    private Project gestionDeBankrolMassiProject = new Project(tipsterMassi, "Gestion de bankrol", new Amount(new BigDecimal("200.00"), Devise.CREDIT));
-    private CustomerAccount adminAccount = new CustomerAccount("ADM", new Amount(new BigDecimal("150000.00"), Devise.CREDIT));
-    private CustomerAccount tipsterMassiAccount = new CustomerAccount("ABC", new Amount(new BigDecimal("2000.00"), Devise.CREDIT));
+    public static final Long GESTION_BANKROL_PROJECT_ID = 1010L;
+    private static final Long ABC = 123L;
+    private static final Long ADM = 0L;
+    private final ProjectDatabase massiProjectDatabase = new InMemoryProjectDatabaseAdapter();
+    private final CustomerDatabase customerDatabase = new InMemoryCustomerDatabaseAdapter();
+    private final CustomerAccountDatabase customerAccountDatabase = new InMemoryCustomerAccountDatabaseAdapter();
+    private Customer tipsterMassi = new Customer(ABC, "Massi");
+    private Customer admin = new Customer(ADM, "Admin");
+    private AuthenticationCustomerGateway authenticationCustomerGateway = new InMemoryAuthenticationCustomerGateway();
+    private SubscriptionDatabase subscriptionDatabase = new InMemorySubscriptionDatabaseAdapter();
+    private ProjectFacade projectFacade = new ProjectFacade(massiProjectDatabase, authenticationCustomerGateway,
+            customerAccountDatabase, subscriptionDatabase);
+    private CreateProjectCommand gestionDeBankrolMassiProject =
+            new CreateProjectCommand("Gestion de bankrol", new Amount(new BigDecimal("200.00"), Devise.CREDIT),
+                    LocalDate.now(), "Objectif...", tipsterMassi);
+    private CustomerAccount adminAccount = new CustomerAccount(ADM, new Amount(new BigDecimal("150000.00"), Devise.CREDIT));
+    private CustomerAccount tipsterMassiAccount = new CustomerAccount(ABC, new Amount(new BigDecimal("2000.00"), Devise.CREDIT));
 
     @Before
     public void beforeTheClass(){
-        customerRepository.add(tipsterMassi);
-        customerRepository.add(admin);
-        customerAccountRepository.add(adminAccount);
-        customerAccountRepository.add(tipsterMassiAccount);
+        customerDatabase.add(tipsterMassi);
+        customerDatabase.add(admin);
+        customerAccountDatabase.addAccount(adminAccount);
+        customerAccountDatabase.addAccount(tipsterMassiAccount);
     }
 
     @Test
-    public void shouldCreateNewProject () throws ProjectAlreadyExistsException, SoldeInsuffisantException, EndDateProjectException {
-        gestionDeBankrolMassiProject.setId(GESTION_BANKROL_PROJECT_ID);
-        projectCustomerPort.createProject(gestionDeBankrolMassiProject);
-
-        Assert.assertThat(massiProjectRepositories.all(GESTION_BANKROL_PROJECT_ID), Matchers.notNullValue());
+    public void shouldCreateNewProject ()
+            throws ProjectAlreadyExistsException, SoldeInsuffisantException, EndDateProjectException, AuthorizationException, ProjectNotFoundException {
+        authenticationCustomerGateway.authenticate(tipsterMassi);
+        ProjectIdentifier projectIdentifier = projectFacade.create(gestionDeBankrolMassiProject);
+        Assert.assertNotNull(massiProjectDatabase.allPronos(projectIdentifier.getId()));
     }
 
     @Test(expected = ProjectAlreadyExistsException.class)
-    public void shouldThrowExceptionWhenOneProjectWithSameNameAlreadyExists() throws ProjectAlreadyExistsException, SoldeInsuffisantException, EndDateProjectException {
-        CustomerAccount adminAccount = new CustomerAccount("ADM", new Amount(new BigDecimal("150000.00"), Devise.CREDIT));
-        CustomerAccount tipsterMassiAccount = new CustomerAccount("ABC", new Amount(new BigDecimal("2000.00"), Devise.CREDIT));
-        customerAccountRepository.add(adminAccount);
-        customerAccountRepository.add(tipsterMassiAccount);
+    public void shouldThrowExceptionWhenOneProjectWithSameNameAlreadyExists() throws ProjectAlreadyExistsException, SoldeInsuffisantException, EndDateProjectException, AuthorizationException {
+        authenticationCustomerGateway.authenticate(tipsterMassi);
+        CustomerAccount adminAccount = new CustomerAccount(ADM, new Amount(new BigDecimal("150000.00"), Devise.CREDIT));
+        CustomerAccount tipsterMassiAccount = new CustomerAccount(ABC, new Amount(new BigDecimal("2000.00"), Devise.CREDIT));
+        customerAccountDatabase.addAccount(adminAccount);
+        customerAccountDatabase.addAccount(tipsterMassiAccount);
 
-        massiProjectRepositories.add(gestionDeBankrolMassiProject);
-        Project gestionDeBankrolMassiProjectBis = new Project(tipsterMassi,"Gestion de bankrol", new Amount(new BigDecimal("100.00"), Devise.CREDIT));
-        gestionDeBankrolMassiProject.setId(GESTION_BANKROL_PROJECT_ID);
-        projectCustomerPort.createProject(gestionDeBankrolMassiProjectBis);
+        ProjectIdentifier projectIdentifier = projectFacade.create(gestionDeBankrolMassiProject);
+        CreateProjectCommand gestionDeBankrolMassiProjectBis =
+                new CreateProjectCommand("Gestion de bankrol", new Amount(new BigDecimal("100.00"), Devise.CREDIT),
+                        LocalDate.now(), "Objectif...", tipsterMassi);
+        projectFacade.create(gestionDeBankrolMassiProjectBis);
     }
 
     @Test(expected = EndDateProjectException.class)
-    public void shouldThrowEndDateExceptionWhenCreatingProjectWithEndDateInThePast() throws SoldeInsuffisantException, ProjectAlreadyExistsException, EndDateProjectException {
-        Project noelMassiProject = new Project(tipsterMassi,"Noel", new Amount(new BigDecimal("200.00"), Devise.CREDIT), LocalDate.of(2019, 1, 1));
-        projectCustomerPort.createProject(noelMassiProject);
+    public void shouldThrowEndDateExceptionWhenCreatingProjectWithEndDateInThePast() throws SoldeInsuffisantException, ProjectAlreadyExistsException, EndDateProjectException, AuthorizationException {
+        authenticationCustomerGateway.authenticate(tipsterMassi);
+        CreateProjectCommand noelMassiProject = new CreateProjectCommand(
+                "Noel", new Amount(new BigDecimal("200.00"), Devise.CREDIT),
+                LocalDate.of(2019, 1, 1), "Objectif.....", tipsterMassi);
+        projectFacade.create(noelMassiProject);
     }
 
 }

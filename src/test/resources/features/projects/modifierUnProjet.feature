@@ -14,20 +14,21 @@ Feature: Modifier un projet pour un Tipster
 
     Given des clients existent:
       | id  | pseudo | nbClaims |
-      | ADM | Admin  | 3        |
-      | ABC | Massi  | 3        |
-      | TRY | Bobby  | 3        |
-      | OPL | Zboubi | 3        |
+      | 0   | Admin  | 3        |
+      | 123 | Massi  | 3        |
+      | 456 | Bobby  | 3        |
+      | 789 | Zboubi | 3        |
 
     Given des projets existent
-      | customerId | projectId | title         | bankrol | objectif               | endDate    |
-      | ABC        | 1111      | fun           | 200.00  | Atteindre 400.00 euros | 2019/12/25 |
-      | ABC        | 2222      | global        | 100.00  | Atteindre 200.00 euros |            |
-      | ABC        | 3333      | Gestion de BK | 1000.00 |                        |            |
+      | customerId | projectId | title         | bankrolInit | objectif               | endDate    |
+      | 123        | 1111      | fun           | 200.00      | Atteindre 400.00 euros | 2019/12/25 |
+      | 123        | 2222      | global        | 100.00      | Atteindre 200.00 euros |            |
+      | 123        | 3333      | Gestion de BK | 1000.00     |                        |            |
+      | 789        | 4444      | Gestion de BK | 1000.00     |                        |            |
 
     Given des pronostics existent:
-      | project | pronoId | cote | status    |
-      | 1111    | A1      | 1.56 | PUBLISHED |
+      | project | pronoId | cote | status    | mise       | uniteMise     |
+      | 1111    | 1       | 1.56 | PUBLISHED | 10.00      | EURO          |
 
   @définirObjectif
   Scenario: Définir l'objectif d'un projet non débuté
@@ -41,16 +42,20 @@ Feature: Modifier un projet pour un Tipster
     @modifierObjectif
     Scenario: Impossible de modifier l'objectif d'un projet débuté
       Given je suis un client authentifié en tant que "Massi"
-      And je dispose du projet "1111" contenant 1 pronostic
       When je tente de modifier l'objectif du projet "1111" comme étant "Atteindre 300 Euros en 3 semaines"
       Then une erreur est remontée car le projet est déjà débuté
+
+    @modifierObjectif
+    Scenario: Impossible de modifier l'objectif d'un projet qui n'appartient pas à l'auteur
+      Given je suis un client authentifié en tant que "Massi"
+      When je tente de modifier l'objectif du projet "4444" comme étant "Atteindre 300 Euros en 3 semaines"
+      Then je vérifie qu'une erreur d'autorisation pas propriétaire du projet est remontée
 
 
 
     @modifierBankrol
     Scenario: Impossible de modifier la bankrol d'un projet débuté
       Given je suis un client authentifié en tant que "Massi"
-      And je dispose du projet "1111" contenant 1 pronostic
       When je tente de modifier la bankrol du projet "1111" en spécifiant "250.00" euros
       Then une erreur est remontée car le projet est déjà débuté
 

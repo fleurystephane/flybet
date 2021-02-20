@@ -1,11 +1,13 @@
 package acceptance.pronos;
 
 import acceptance.pronos.facilities.PronoAttempt;
-import com.sfl.flybet.casestudy.domain.Pronostic;
-import com.sfl.flybet.casestudy.domain.gateways.AuthenticationCustomerGateway;
-import com.sfl.flybet.casestudy.domain.ports.pronostic.PronosticPublicationPort;
-import com.sfl.flybet.casestudy.infrastructure.ports.ProjectRepository;
-import com.sfl.flybet.casestudy.domain.adapters.PublishProno;
+import com.sfl.flybet.domain.authentication.AuthenticationCustomerGateway;
+import com.sfl.flybet.domain.project.ports.outgoing.ProjectDatabase;
+import com.sfl.flybet.domain.pronostic.PublishPronosticFacade;
+import com.sfl.flybet.domain.pronostic.SavePronosticFacade;
+import com.sfl.flybet.domain.pronostic.model.Pronostic;
+import com.sfl.flybet.domain.pronostic.ports.incoming.PublishPronostic;
+import com.sfl.flybet.domain.pronostic.ports.incoming.SavePronostic;
 import configuration.projects.ProjectContext;
 import configuration.projects.ScenarioProjectContext;
 import configuration.pronos.PronosContext;
@@ -19,7 +21,7 @@ import java.util.Set;
 
 public class SavingPronoSteps implements En {
 
-    public SavingPronoSteps(ProjectRepository projectRepository,
+    public SavingPronoSteps(ProjectDatabase projectDatabase,
                             AuthenticationCustomerGateway authenticationCustomerGateway,
                             ScenarioPronosticContext scenarioPronosticContext,
                             ScenarioProjectContext scenarioProjectContext) {
@@ -27,22 +29,29 @@ public class SavingPronoSteps implements En {
 
 
         Then("^je vérifie que l'enregistrement est effectif$", () -> {
-            Set<Pronostic> pronostics = projectRepository.all((String) scenarioProjectContext.getContextValue(ProjectContext.PROJECT_NAME));
-            Optional<Pronostic> pronoFound = pronostics.stream().filter(pronostic -> pronostic.equals(
-                    ((PronoAttempt) scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT)).getPronostic()
+            Set<Pronostic> pronostics = projectDatabase.allPronos((Long) scenarioProjectContext.getContextValue(ProjectContext.PROJECT_ID));
+            Optional<Pronostic> pronoFound = pronostics.stream().filter(pronostic -> pronostic.getId().equals(
+                    ((PronoAttempt) scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT)).getPronostic().getId()
             )).findFirst();
             Assert.assertTrue(pronoFound.isPresent());
             Assert.assertTrue(pronoFound.get().isDraft());
         });
         When("^je tente d'enregistrer le pronostic \"([^\"]*)\" et de cote \"([^\"]*)\" dans le projet \"([^\"]*)\"$",
                 (String pronoId, String cote, String projectId) -> {
-                    Pronostic pr = new Pronostic(pronoId);
+                    Pronostic pr = new Pronostic(Long.valueOf(pronoId));
                     pr.setCote(new BigDecimal(Float.parseFloat(cote)));
-                    PronosticPublicationPort publishProno = new PublishProno(authenticationCustomerGateway.currentCustomer().get(),
-                            projectRepository);
-                    publishProno.save(pr, projectId);
+                    SavePronostic savePronostic = new SavePronosticFacade(projectDatabase);
+                    /*PronosticPublicationPort publishProno = new PublishProno(authenticationCustomerGateway.currentCustomer().get(),
+                            projectDatabase);*/
+                    savePronostic.save(pr, Long.valueOf(projectId));
                     setPronoAttemptInScenarioContext(scenarioPronosticContext, scenarioProjectContext, pronoId, projectId);
                 });
+        When("^je tente d'enregistrer le pronostic \"([^\"]*)\" dans le projet \"([^\"]*)\"$", (String pronoId, String projectId) -> {
+            Pronostic prono = (Pronostic) scenarioPronosticContext.getContextValue(PronosContext.NEW_PRONO);
+            SavePronostic savePronostic = new SavePronosticFacade(projectDatabase);
+            savePronostic.save(prono, Long.valueOf(projectId));
+            setPronoAttemptInScenarioContext(scenarioPronosticContext, scenarioProjectContext, pronoId, projectId);
+        });
 
     }
 
@@ -53,9 +62,9 @@ public class SavingPronoSteps implements En {
             pronoAttempt = new PronoAttempt();
         }
         pronoAttempt.setProjectId(projectId);
-        pronoAttempt.setProno(new Pronostic(pronoId));
+        pronoAttempt.setProno(new Pronostic(Long.valueOf(pronoId)));
         scenarioPronosticContext.setContextValue(PronosContext.PRONO_ATTEMPT, pronoAttempt);
         scenarioPronosticContext.setContextValue(PronosContext.PRONO_TITLE, pronoId);
-        scenarioProjectContext.setContextValue(ProjectContext.PROJECT_NAME, projectId);
+        scenarioProjectContext.setContextValue(ProjectContext.PROJECT_ID, Long.valueOf(projectId));
     }
 }

@@ -1,9 +1,7 @@
 package com.sfl.flybet.utilities;
 
-import com.sfl.flybet.casestudy.domain.Amount;
-import com.sfl.flybet.casestudy.domain.Devise;
 
-import java.math.BigDecimal;
+import com.sfl.flybet.domain.common.model.Amount;
 
 public class AccountConvertor {
 

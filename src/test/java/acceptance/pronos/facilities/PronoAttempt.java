@@ -1,17 +1,17 @@
 package acceptance.pronos.facilities;
 
-import com.sfl.flybet.casestudy.domain.Pronostic;
-import com.sfl.flybet.casestudy.domain.Tipster;
+
+import com.sfl.flybet.domain.customer.model.Customer;
+import com.sfl.flybet.domain.pronostic.model.Pronostic;
 
 public class PronoAttempt {
     private Pronostic pronostic;
     private String projectName;
-    private Tipster customer;
-    private String pronoTitle;
+    private Customer tipster;
     private String projectId;
 
-    public void setCustomer(Tipster tipster) {
-        this.customer = tipster;
+    public void setCustomer(Customer tipster) {
+        this.tipster = tipster;
     }
 
     public void setProno(Pronostic pronostic) {
@@ -22,8 +22,8 @@ public class PronoAttempt {
         this.projectName = projectName;
     }
 
-    public Tipster getCustomer() {
-        return customer;
+    public Customer getCustomer() {
+        return tipster;
     }
 
 

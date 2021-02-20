@@ -4,7 +4,7 @@ import io.cucumber.java8.En;
 import org.springframework.test.context.ContextConfiguration;
 
 @ContextConfiguration(classes = {
-        RepositoriesConfiguration.class,
+        DatabasesConfiguration.class,
         GatewaysConfiguration.class,
         ConfigurationContext.class
 })

@@ -1,6 +1,6 @@
 package acceptance.projects.facilities;
 
-import com.sfl.flybet.casestudy.domain.Amount;
+import com.sfl.flybet.domain.common.model.Amount;
 
 import java.time.LocalDate;
 
@@ -9,12 +9,22 @@ public class ProjectAttempt {
     private final Amount bkAmount;
     private String objectif;
     private LocalDate endProject;
-    private String id;
 
-    public ProjectAttempt(String id, String projectTitle, Amount bkAmount) {
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    private Long id;
+
+    public ProjectAttempt(Long id, String projectTitle, Amount bkAmount) {
         this.id = id;
         this.projectTitle = projectTitle;
         this.bkAmount = bkAmount;
+    }
+
+    public ProjectAttempt(String projectTitle, Amount amount) {
+        this.projectTitle = projectTitle;
+        this.bkAmount = amount;
     }
 
     public String getProjectTitle() {
@@ -41,7 +51,7 @@ public class ProjectAttempt {
         return bkAmount;
     }
 
-    public String getId() {
+    public Long getId() {
         return id;
     }
 }

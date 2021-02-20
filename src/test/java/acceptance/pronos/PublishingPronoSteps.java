@@ -2,22 +2,26 @@ package acceptance.pronos;
 
 import acceptance.pronos.facilities.PronoAttempt;
 import acceptance.pronos.facilities.PublishError;
-import com.sfl.flybet.casestudy.domain.Project;
 import com.sfl.flybet.casestudy.domain.exceptions.AlreadyPublishedPronosticException;
-import com.sfl.flybet.casestudy.domain.Pronostic;
-import com.sfl.flybet.casestudy.domain.StatusProno;
-import com.sfl.flybet.casestudy.domain.exceptions.ProjectAlreadyExistsException;
+import com.sfl.flybet.casestudy.domain.exceptions.BankrolInsufficientException;
 import com.sfl.flybet.casestudy.domain.exceptions.PronosticNotFoundException;
-import com.sfl.flybet.casestudy.domain.gateways.AuthenticationCustomerGateway;
-import com.sfl.flybet.casestudy.domain.ports.pronostic.PronosticPublicationPort;
-import com.sfl.flybet.casestudy.infrastructure.ports.ProjectRepository;
-import com.sfl.flybet.casestudy.domain.adapters.PublishProno;
+import com.sfl.flybet.domain.authentication.AuthenticationCustomerGateway;
+import com.sfl.flybet.domain.common.model.Amount;
+import com.sfl.flybet.domain.common.model.Devise;
+import com.sfl.flybet.domain.project.exceptions.ProjectAlreadyExistsException;
+import com.sfl.flybet.domain.project.model.Project;
+import com.sfl.flybet.domain.project.ports.outgoing.ProjectDatabase;
+import com.sfl.flybet.domain.pronostic.ChangeCotePronosticFacade;
+import com.sfl.flybet.domain.pronostic.PublishPronosticFacade;
+import com.sfl.flybet.domain.pronostic.model.Pronostic;
+import com.sfl.flybet.domain.pronostic.model.StatusProno;
+import com.sfl.flybet.domain.pronostic.ports.incoming.ChangeCotePronostic;
+import com.sfl.flybet.domain.pronostic.ports.incoming.PublishPronostic;
 import configuration.projects.ProjectContext;
 import configuration.projects.ScenarioProjectContext;
 import configuration.pronos.PronosContext;
 import configuration.pronos.ScenarioPronosticContext;
 import io.cucumber.java8.En;
-import org.hamcrest.Matchers;
 import org.junit.Assert;
 
 import java.math.BigDecimal;
@@ -27,30 +31,36 @@ import java.util.Set;
 public class PublishingPronoSteps implements En {
 
 
-    public PublishingPronoSteps(ProjectRepository projectRepository,
+    public PublishingPronoSteps(ProjectDatabase projectDatabase,
                                 AuthenticationCustomerGateway authenticationCustomerGateway,
                                 ScenarioPronosticContext scenarioPronosticContext,
                                 ScenarioProjectContext scenarioProjectContext) {
 
 
-        And("^j'ai publié le pronostic \"([^\"]*)\" dans le projet \"([^\"]*)\"$", (String pronoId, String projectName) -> {
-            Pronostic prono = new Pronostic(pronoId);
-            prono.setStatus(null);
+        And("^j'ai publié le pronostic \"([^\"]*)\" dans le projet d'id \"([^\"]*)\" et de nom \"([^\"]*)\"$",
+                (String pronoId, String projectId, String projectName) -> {
+            Pronostic prono = new Pronostic(Long.valueOf(pronoId));
+            prono.setStatusProno(null);
             try {
-                projectRepository.add(new Project(authenticationCustomerGateway.currentCustomer().get(),projectName));
+                Project p = new Project("Title...", new Amount(new BigDecimal("500.00"), Devise.EURO),
+                        "Objectif...", authenticationCustomerGateway.currentCustomer().get(), Long.valueOf(projectId));
+                projectDatabase.add(p);
             } catch (ProjectAlreadyExistsException e) {
                 Assert.fail("Le projet ne peut deja exister !");
             }
-            projectRepository.addPronoToProject(projectName, prono);
+            projectDatabase.addPronoToProject(Long.valueOf(projectId), prono);
 
             scenarioPronosticContext.setContextValue(PronosContext.PRONO_TITLE, pronoId);
             scenarioProjectContext.setContextValue(ProjectContext.PROJECT_NAME, projectName);
 
         });
+        And("^j'ai créé un nouveau pronostic \"([^\"]*)\" de cote \"([^\"]*)\" de mise \"([^\"]*)\" \"([^\"]*)\"$",
+                (String pronoId, String cote, String mise, String uniteMise) -> {
 
-        And("^j'ai créé un nouveau pronostic \"([^\"]*)\" de cote \"([^\"]*)\"$", (String pronoId, String cote) -> {
-            Pronostic pronostic = new Pronostic(pronoId);
+            Pronostic pronostic = new Pronostic(Long.valueOf(pronoId));
             pronostic.setCote(BigDecimal.valueOf(Float.parseFloat(cote)));
+            pronostic.setUniteMise(uniteMise);
+            pronostic.setMise(new BigDecimal(mise));
             scenarioPronosticContext.setContextValue(PronosContext.NEW_PRONO, pronostic);
         });
 
@@ -63,20 +73,19 @@ public class PublishingPronoSteps implements En {
              */
             try {
                 Assert.assertFalse(publishErrorIsConfirm(scenarioPronosticContext));
-                Optional<Pronostic> optPronostic = projectRepository.findPronosticById(pronoId);
-                PronosticPublicationPort publishProno = new PublishProno(authenticationCustomerGateway.currentCustomer().get(),
-                        projectRepository);
+                Optional<Pronostic> optPronostic = projectDatabase.findPronosticById(Long.valueOf(pronoId));
+                PublishPronostic publishPronostic = new PublishPronosticFacade(projectDatabase);
+                Pronostic pronoToPublish = null;
                 if(optPronostic.isPresent()){
-                    publishProno.publish(optPronostic.get(), projectId);
+                    pronoToPublish = optPronostic.get();
                 }
                 else{
-                    Pronostic prono = (Pronostic)scenarioPronosticContext.getContextValue(PronosContext.NEW_PRONO);
-                    publishProno.publish(prono, projectId);
+                    pronoToPublish = (Pronostic)scenarioPronosticContext.getContextValue(PronosContext.NEW_PRONO);
                 }
+                publishPronostic.publish(pronoToPublish, Long.valueOf(projectId));
+                setPronoAttemptPublishedInScenarioContext(scenarioPronosticContext, scenarioProjectContext, Long.valueOf(pronoId), projectId);
 
-                setPronoAttemptPublishedInScenarioContext(scenarioPronosticContext, scenarioProjectContext, pronoId, projectId);
-
-            } catch (AlreadyPublishedPronosticException | IllegalArgumentException e) {
+            } catch (AlreadyPublishedPronosticException | BankrolInsufficientException | IllegalArgumentException e) {
                 setConfirmPublishError(scenarioPronosticContext);
             }
                 });
@@ -84,8 +93,8 @@ public class PublishingPronoSteps implements En {
             Assert.assertTrue("Une erreur est attendue ici....", publishErrorIsConfirm(scenarioPronosticContext));
         });
         Then("^je vérifie que la publication est effective$", () -> {
-            Set<Pronostic> pronostics = projectRepository.all(
-                    (String) scenarioProjectContext.getContextValue(ProjectContext.PROJECT_NAME));
+            Set<Pronostic> pronostics = projectDatabase.allPronos(
+                    (Long) scenarioProjectContext.getContextValue(ProjectContext.PROJECT_ID));
             Optional<Pronostic> p = pronostics.stream().filter(
                     prono -> prono.getId().equals(
                             ((PronoAttempt)scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT)).getPronostic().getId())).findFirst();
@@ -96,34 +105,35 @@ public class PublishingPronoSteps implements En {
         });
 
 
-        And("^j'ai enregistré le pronostic \"([^\"]*)\" de cote \"([^\"]*)\" dans le projet \"([^\"]*)\"$",
-                (String pronoId, String cote, String projectId) -> {
-            Pronostic prono = new Pronostic(pronoId);
-            prono.setCote(BigDecimal.valueOf(Float.parseFloat(cote)));
+        And("^j'ai enregistré le pronostic \"([^\"]*)\" de cote \"([^\"]*)\" et de mise \"([^\"]*)\" \"([^\"]*)\" dans le projet \"([^\"]*)\"$",
+                (String pronoId, String cote, String mise, String uniteDevise, String projectId) -> {
+                    Pronostic prono = new Pronostic(Long.valueOf(pronoId));
+                    prono.setCote(BigDecimal.valueOf(Float.parseFloat(cote)));
+                    prono.setMise(new BigDecimal(mise));
+                    prono.setUniteMise(uniteDevise);
+                    prono.setStatusProno(StatusProno.DRAFT);
 
-            projectRepository.addPronoToProject(projectId, prono);
+                    projectDatabase.addPronoToProject(Long.valueOf(projectId), prono);
 
-            scenarioProjectContext.setContextValue(ProjectContext.PROJECT_NAME, projectId);
-            scenarioPronosticContext.setContextValue(PronosContext.PRONO_TITLE, pronoId);
-        });
+                    scenarioProjectContext.setContextValue(ProjectContext.PROJECT_ID, Long.valueOf(projectId));
+                    scenarioPronosticContext.setContextValue(PronosContext.PRONO_TITLE, pronoId);
+                });
 
         When("^je saisis une nouvelle cote de \"([^\"]*)\" sur le pronostic \"([^\"]*)\"$", (String cote, String pronoId) -> {
 
-            Optional<Pronostic> optPronostic = optPronostic = projectRepository.findPronosticById(pronoId);
+            Optional<Pronostic> optPronostic = projectDatabase.findPronosticById(Long.valueOf(pronoId));
 
             Assert.assertNotNull(optPronostic);
             try {
-                PronosticPublicationPort publishProno = new PublishProno(authenticationCustomerGateway.currentCustomer().get(),
-                        projectRepository);
-                publishProno.changeCoteValue(optPronostic.get(),
-                        BigDecimal.valueOf(Float.parseFloat(cote)));
+                ChangeCotePronostic changeCotePronostic = new ChangeCotePronosticFacade(projectDatabase);
+                changeCotePronostic.changeCoteValue(optPronostic.get(), BigDecimal.valueOf(Float.parseFloat(cote)));
             } catch (PronosticNotFoundException e) {
                 e.printStackTrace();
             }
 
             PronoAttempt attempt = new PronoAttempt();
-            Pronostic pronostic = new Pronostic(pronoId);
-            pronostic.setCote(BigDecimal.valueOf(Float.parseFloat(cote)));
+            Pronostic pronostic = new Pronostic(Long.valueOf(pronoId));
+            pronostic.setCote(optPronostic.get().getCote());
             attempt.setProno(pronostic);
             scenarioPronosticContext.setContextValue(PronosContext.PRONO_ATTEMPT, attempt);
         });
@@ -131,19 +141,22 @@ public class PublishingPronoSteps implements En {
 
             PronoAttempt attempt = (PronoAttempt)scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT);
 
-            Assert.assertEquals(projectRepository.findPronosticById(attempt.getPronostic().getId()).get().getCote(),
+            Assert.assertEquals(projectDatabase.findPronosticById(attempt.getPronostic().getId()).get().getCote(),
                         attempt.getPronostic().getCote());
         });
         Then("^je vérifie que le changement de cote n'est pas effectif$", () -> {
             PronoAttempt attempt = (PronoAttempt)scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT);
-            Assert.assertThat(attempt.getPronostic().getCote(),
-                    Matchers.not(Matchers.equalTo(projectRepository.findPronosticById(attempt.getPronostic().getId()).get().getCote())));
+            System.out.println("attempt : "+attempt.getPronostic().getCote());
+            System.out.println("repository : "+projectDatabase.findPronosticById(attempt.getPronostic().getId()).get().getCote());
+            Assert.assertEquals(0, attempt.getPronostic().getCote().compareTo(
+                    projectDatabase.findPronosticById(attempt.getPronostic().getId()).get().getCote()
+            ));
 
         });
 
         Then("^une erreur est remontée car le pronostic n'existe pas$", () -> {
-            Assert.assertThat(scenarioPronosticContext.getContextValue(PronosContext.RETRIEVE_ERROR),
-                    Matchers.instanceOf(PronosticNotFoundException.class));
+            Assert.assertTrue(scenarioPronosticContext.getContextValue(PronosContext.RETRIEVE_ERROR).getClass()
+                    .equals(PronosticNotFoundException.class));
         });
 
 
@@ -168,14 +181,15 @@ public class PublishingPronoSteps implements En {
 
     private void setPronoAttemptPublishedInScenarioContext(ScenarioPronosticContext scenarioPronosticContext,
                                                            ScenarioProjectContext scenarioProjectContext,
-                                                           String pronoId, String projectName) {
+                                                           Long pronoId, String projectName) {
         PronoAttempt pronoAttempt = (PronoAttempt) scenarioPronosticContext.getContextValue(PronosContext.PRONO_ATTEMPT);
         if(null == pronoAttempt){
             pronoAttempt = new PronoAttempt();
         }
         pronoAttempt.setProjectName(projectName);
         Pronostic prono = new Pronostic(pronoId);
-        prono.setStatus(StatusProno.PUBLISHED);
+        prono.setMise(BigDecimal.ZERO);
+        prono.setStatusProno(StatusProno.PUBLISHED);
         pronoAttempt.setProno(prono);
         scenarioPronosticContext.setContextValue(PronosContext.PRONO_ATTEMPT, pronoAttempt);
         scenarioPronosticContext.setContextValue(PronosContext.PRONO_TITLE, pronoId);

@@ -1,73 +1,80 @@
 package acceptance.customers;
 
-import com.sfl.flybet.casestudy.domain.Pronostic;
-import com.sfl.flybet.casestudy.domain.StatusProno;
-import com.sfl.flybet.casestudy.domain.exceptions.*;
-import com.sfl.flybet.casestudy.domain.gateways.AuthenticationCustomerGateway;
-import com.sfl.flybet.casestudy.domain.ports.reliability.PronosticReliabilityPort;
-import com.sfl.flybet.casestudy.domain.repositories.PenaltyRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.CustomerRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.DisapprovalRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.NotificationRepository;
-import com.sfl.flybet.casestudy.infrastructure.ports.ProjectRepository;
-import com.sfl.flybet.casestudy.domain.adapters.PronosticReliability;
+import com.sfl.flybet.casestudy.domain.exceptions.PronosticNotDecidableException;
+import com.sfl.flybet.casestudy.domain.exceptions.PronosticNotFoundException;
+import com.sfl.flybet.domain.authentication.AuthenticationCustomerGateway;
+import com.sfl.flybet.domain.authentication.exceptions.AuthorizationException;
+import com.sfl.flybet.domain.customer.ports.outgoing.CustomerDatabase;
+import com.sfl.flybet.domain.project.ports.outgoing.ProjectDatabase;
+import com.sfl.flybet.domain.pronostic.DisapprovalPronosticFacade;
+import com.sfl.flybet.domain.pronostic.ManageResultPronosticFacade;
+import com.sfl.flybet.domain.pronostic.model.Pronostic;
+import com.sfl.flybet.domain.pronostic.model.StatusProno;
+import com.sfl.flybet.domain.pronostic.ports.incoming.DisapprovalPronostic;
+import com.sfl.flybet.domain.pronostic.ports.incoming.ManageResultPronostic;
+import com.sfl.flybet.domain.pronostic.ports.outgoing.DisapprovalPronosticDatabase;
+import com.sfl.flybet.domain.pronostic.ports.outgoing.PenaltyCustomerDatabase;
+import com.sfl.flybet.domain.pronostic.ports.outgoing.PronosticNotificationDatabase;
 import configuration.pronos.PronosContext;
 import configuration.pronos.ScenarioPronosticContext;
 import io.cucumber.java8.En;
-import org.hamcrest.Matchers;
 import org.junit.Assert;
 
 import java.util.Optional;
 
 public class CustomerClaimSteps implements En {
-    public CustomerClaimSteps(ProjectRepository projectRepository, DisapprovalRepository disapprovalRepository,
+    public CustomerClaimSteps(ProjectDatabase projectDatabase, DisapprovalPronosticDatabase disapprovalPronosticDatabase,
                               AuthenticationCustomerGateway authenticationCustomerGateway,
                               ScenarioPronosticContext scenarioPronosticContext,
-                              NotificationRepository notificationRepository,
-                              PenaltyRepository penaltyRepository, CustomerRepository customerRepository) {
-        PronosticReliabilityPort pronosticReliabilityPort =
-                new PronosticReliability(authenticationCustomerGateway, projectRepository,
-                        disapprovalRepository, notificationRepository, penaltyRepository);
+                              PronosticNotificationDatabase pronosticNotificationDatabase,
+                              PenaltyCustomerDatabase penaltyCustomerDatabase, CustomerDatabase customerDatabase) {
+        DisapprovalPronostic disapprovalPronostic =
+                new DisapprovalPronosticFacade(projectDatabase, disapprovalPronosticDatabase);
+        ManageResultPronostic manageResultPronosticFacade =
+                new ManageResultPronosticFacade(projectDatabase, penaltyCustomerDatabase,pronosticNotificationDatabase,
+                        authenticationCustomerGateway, disapprovalPronosticDatabase);
 
         And("^le pronostic \"([^\"]*)\" a été validé gagnant$", (String pronoId) -> {
-            Optional<Pronostic> pronostic = projectRepository.findPronosticById(pronoId);
-            pronostic.ifPresent(pronostic1 -> pronostic1.setStatus(StatusProno.WON));
+            Optional<Pronostic> pronostic = projectDatabase.findPronosticById(Long.valueOf(pronoId));
+            pronostic.ifPresent(pronostic1 -> pronostic1.setStatusProno(StatusProno.WON));
         });
         Then("^le pronostic \"([^\"]*)\" contient (\\d+) désapprobation$", (String pronoId, Integer nbClaims) -> {
-            Assert.assertThat(disapprovalRepository.countDisapprouval(projectRepository.findPronosticById(pronoId).get()), Matchers.equalTo(Integer.toUnsignedLong(nbClaims)));
+            Assert.assertTrue(disapprovalPronosticDatabase.countDisapprouval(
+                    projectDatabase.findPronosticById(Long.valueOf(pronoId)).get())==Integer.toUnsignedLong(nbClaims));
         });
         And("^je ne dispose plus que de (\\d+) revendications$", (Integer nbClaims) -> {
-            Assert.assertThat(pronosticReliabilityPort.getDisapprovalRaminingCounter(authenticationCustomerGateway.currentCustomer().get()), Matchers.equalTo(nbClaims));
+            Assert.assertTrue(disapprovalPronostic.getDisapprovalRaminingCounter(
+                    authenticationCustomerGateway.currentCustomer().get()) == nbClaims);
         });
         Then("^une erreur est remontée indiquant que le pronostic est déjà confirmé$", () -> {
-            Assert.assertThat(PronosticReliabilityPort.PRONOSTIC_IS_NOT_IN_DISAPPROVALABLE_STATUS,
-                    Matchers.equalTo(scenarioPronosticContext.getContextValue(PronosContext.NOT_DISAPPROVALABLE)));
+            Assert.assertTrue(DisapprovalPronosticFacade.PRONOSTIC_IS_NOT_IN_DISAPPROVALABLE_STATUS.equals(
+                    scenarioPronosticContext.getContextValue(PronosContext.NOT_DISAPPROVALABLE)));
         });
         When("^je tente de déclarer gagnant le pronostic \"([^\"]*)\"$", (String pronoId) -> {
             try {
-                pronosticReliabilityPort.declarePronosticWon(pronoId);
+                manageResultPronosticFacade.declarePronosticWon(Long.valueOf(pronoId));
             } catch (PronosticNotFoundException e) {
                 Assert.fail("PronosticNotFoundException!!");
             } catch (PronosticNotDecidableException e) {
-                scenarioPronosticContext.setContextValue(PronosContext.NOT_DECIDABLE, projectRepository.findPronosticById(pronoId).get());
+                scenarioPronosticContext.setContextValue(PronosContext.NOT_DECIDABLE,
+                        projectDatabase.findPronosticById(Long.valueOf(pronoId)).get());
             }
         });
         And("^le pronostic \"([^\"]*)\" est gagnant$", (String pronoId) -> {
-            Assert.assertThat(projectRepository.findPronosticById(pronoId).get().getStatusProno(), Matchers.equalTo(StatusProno.WON));
+            Assert.assertTrue(projectDatabase.findPronosticById(Long.valueOf(pronoId)).get().getStatusProno() == StatusProno.WON);
         });
-        Then("^une notification a été envoyée$", () -> {
-            Assert.assertThat(notificationRepository.all(), Matchers.hasSize(1));
-        });
+
         Then("^une erreur est remontée indiquant que le pronostic doit être publié$", () -> {
-            Assert.assertThat(scenarioPronosticContext.getContextValue(PronosContext.NOT_DECIDABLE), Matchers.instanceOf(Pronostic.class));
+            Assert.assertTrue(scenarioPronosticContext.getContextValue(PronosContext.NOT_DECIDABLE).getClass().equals(Pronostic.class));
         });
         When("^je déclare Perdant le pronostic \"([^\"]*)\" de \"([^\"]*)\" déclaré gagnant$", (String pronoId, String pseudoTipster) -> {
-            Optional<Pronostic> pronosticOptional = projectRepository.findPronosticById(pronoId);
+            Optional<Pronostic> pronosticOptional = projectDatabase.findPronosticById(Long.valueOf(pronoId));
             if(pronosticOptional.isPresent()){
                 if(pronosticOptional.get().isDecidedWon()){
                     try {
-                        pronosticReliabilityPort.changePronosticToLostAsAdmin(customerRepository.byPseudo(pseudoTipster).get(), pronosticOptional.get());
-                    } catch (AuthorisationException e) {
+                        manageResultPronosticFacade.changePronosticToLostAsAdmin(customerDatabase.getCustomerByPseudo(pseudoTipster).get(),
+                                pronosticOptional.get());
+                    } catch (AuthorizationException e) {
                         Assert.fail("Pas les autorisations pour changer en Perdant un prono déclaré gagnant");
                     } catch (PronosticNotFoundException e) {
                         scenarioPronosticContext.setContextValue(PronosContext.RETRIEVE_ERROR, e);
@@ -80,6 +87,9 @@ public class CustomerClaimSteps implements En {
             else{
                 Assert.fail("Pronostic inexistant!!!");
             }
+        });
+        Then("^une notification a été envoyée sur le pronostic \"([^\"]*)\"$", (String pronoId) -> {
+            Assert.assertTrue(pronosticNotificationDatabase.all(Long.valueOf(pronoId)).size() == 1);
         });
     }
 }

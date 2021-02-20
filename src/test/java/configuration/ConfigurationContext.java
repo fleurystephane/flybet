@@ -1,6 +1,8 @@
 package configuration;
 
 import configuration.account.ScenarioAccountContext;
+import configuration.authorization.ScenarioAuthorizationContext;
+import configuration.customer.ScenarioCustomerContext;
 import configuration.projects.ScenarioProjectContext;
 import configuration.pronos.ScenarioPronosticContext;
 import org.springframework.context.annotation.Bean;
@@ -24,4 +26,12 @@ public class ConfigurationContext {
     public ScenarioAccountContext scenarioAccountContext() {
         return new ScenarioAccountContext();
     }
+    @Bean
+    @Scope("cucumber-glue")
+    public ScenarioAuthorizationContext scenarioAuthorizationContext() {
+        return new ScenarioAuthorizationContext();
+    }
+    @Bean
+    @Scope("cucumber-glue")
+    public ScenarioCustomerContext scenarioCustomerContext() { return new ScenarioCustomerContext(); }
 }

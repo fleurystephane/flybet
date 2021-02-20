@@ -1,6 +1,8 @@
 package acceptance.account.facilities;
 
-import com.sfl.flybet.casestudy.domain.Customer;
+
+
+import com.sfl.flybet.domain.customer.model.Customer;
 
 import java.time.LocalDate;
 

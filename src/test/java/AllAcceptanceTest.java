@@ -11,7 +11,7 @@ import org.junit.runner.RunWith;
                 "pretty", "html:target/Destination"
         },
         strict = true
-        /*tags = {"@fiabilite"
+/*        tags = {"@fiabilite"
                 , "@declarerPerdant"
                 , "@avertissement"
                 ,"@créationDeProjet"
